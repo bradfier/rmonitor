@@ -51,12 +51,17 @@ impl Decoder for RMonitorDecoder {
 mod tests {
     use super::*;
 
-    fn consume(decoder: &mut RMonitorDecoder, bytes: &mut BytesMut) -> Vec<Result<Option<Record>, RMonitorCodecError>> {
+    fn consume(
+        decoder: &mut RMonitorDecoder,
+        bytes: &mut BytesMut,
+    ) -> Vec<Result<Option<Record>, RMonitorCodecError>> {
         let mut result = vec![];
         loop {
             match decoder.decode(bytes) {
-                Ok(None) => { break; }
-                out => result.push(out)
+                Ok(None) => {
+                    break;
+                }
+                out => result.push(out),
             }
         }
         result
@@ -65,7 +70,9 @@ mod tests {
     #[test]
     fn test_decodes_single_line() {
         let mut decoder = RMonitorDecoder::new(2048);
-        let mut bytes = BytesMut::from(b"$F,9999,\"00:00:00\",\"14:09:52\",\"00:59:59\",\"      \"\r\n".to_vec());
+        let mut bytes = BytesMut::from(
+            b"$F,9999,\"00:00:00\",\"14:09:52\",\"00:59:59\",\"      \"\r\n".to_vec(),
+        );
 
         let result = consume(&mut decoder, &mut bytes);
 
@@ -84,13 +91,9 @@ mod tests {
 
         let result = consume(&mut decoder, &mut bytes);
 
+        // All bytes were consumed
         assert_eq!(0, bytes.len());
-
-        // Ignore unknown record types for now (as our data set has extended IMSA codes present)
-        let errors: Vec<Result<Option<Record>, RMonitorCodecError>> = result
-            .into_iter()
-            .filter(|r| r.is_err() && !matches!(r, Err(RMonitorCodecError::RecordDecode(RecordError::UnknownRecordType { .. }))))
-            .collect();
-        assert_eq!(errors.len(), 0);
+        // And no errors were encountered when processing the file
+        assert!(result.into_iter().all(|r| r.is_ok()));
     }
 }

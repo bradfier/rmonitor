@@ -15,6 +15,10 @@ pub mod command {
     pub const INIT: &str = "$I";
     pub const PASSING: &str = "$J";
     pub const CORRECTION: &str = "$COR";
+
+    // IMSA enhanced protocol messages
+    pub const LINE_CROSSING: &str = "$L";
+    pub const TRACK_DESCRIPTION: &str = "$T";
 }
 
 #[derive(Error, Debug)]
@@ -27,6 +31,8 @@ pub enum RecordError {
     UnknownFlagState(String),
     #[error("invalid integer field")]
     InvalidIntegerField(#[from] ParseIntError),
+    #[error("track description had different number of sections than specified")]
+    IncorrectSectionCount,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -78,7 +84,7 @@ impl RMonitorField<u32> for &str {
 
 impl RMonitorField<Option<u32>> for &str {
     fn decode(self) -> Result<Option<u32>, RecordError> {
-        if self.len() == 0 {
+        if self.is_empty() {
             Ok(None)
         } else {
             Ok(Some(self.parse()?))
@@ -111,6 +117,8 @@ pub enum Record {
     Init(Init),
     Passing(Passing),
     Correction(Correction),
+    LineCrossing(LineCrossing),
+    TrackDescription(TrackDescription),
 }
 
 impl Record {
@@ -133,6 +141,10 @@ impl Record {
             command::INIT => Ok(Record::Init(Init::decode(&splits)?)),
             command::PASSING => Ok(Record::Passing(Passing::decode(&splits)?)),
             command::CORRECTION => Ok(Record::Correction(Correction::decode(&splits)?)),
+            command::LINE_CROSSING => Ok(Record::LineCrossing(LineCrossing::decode(&splits)?)),
+            command::TRACK_DESCRIPTION => {
+                Ok(Record::TrackDescription(TrackDescription::decode(&splits)?))
+            }
             _ => Err(RecordError::UnknownRecordType(splits[0].to_owned())),
         }
     }
@@ -392,6 +404,96 @@ impl Correction {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LineCrossing {
+    number: String,
+    timeline_number: String,
+    timeline_name: String,
+    date: String,
+    time: String,
+    // The following fields are referenced in the IMSA protocol document
+    // but don't appear in any of the sample data.
+    driver_id: Option<u8>,
+    class_name: Option<String>,
+}
+
+impl LineCrossing {
+    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
+        if parts.len() < 6 {
+            return Err(RecordError::MalformedRecord);
+        }
+
+        let driver_id = parts
+            .get(6)
+            .map(|p| p.decode())
+            .map_or(Ok(None), |r| r.map(Some))?;
+
+        let class_name = parts
+            .get(7)
+            .map(|p| p.decode())
+            .map_or(Ok(None), |r| r.map(Some))?;
+
+        Ok(Self {
+            number: parts[1].decode()?,
+            timeline_number: parts[2].decode()?,
+            timeline_name: parts[3].decode()?,
+            date: parts[4].decode()?,
+            time: parts[5].decode()?,
+            driver_id,
+            class_name,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TrackDescription {
+    name: String,
+    short_name: String,
+    distance: String,
+    sections: Vec<TrackSection>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TrackSection {
+    name: String,
+    start: String,
+    end: String,
+    distance: u32,
+}
+
+impl TrackDescription {
+    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
+        if parts.len() < 5 {
+            return Err(RecordError::MalformedRecord);
+        }
+
+        let expected: usize = parts[4].parse()?;
+        let sections: Vec<TrackSection> = parts[5..]
+            .chunks(4)
+            .filter(|s| s.len() == 4) // Discard short sections
+            .map(|s| {
+                Ok(TrackSection {
+                    name: s[0].decode()?,
+                    start: s[1].decode()?,
+                    end: s[2].decode()?,
+                    distance: s[3].decode()?,
+                })
+            })
+            .collect::<Result<Vec<TrackSection>, RecordError>>()?;
+
+        if sections.len() != expected {
+            return Err(RecordError::IncorrectSectionCount);
+        }
+
+        Ok(Self {
+            name: parts[1].decode()?,
+            short_name: parts[2].decode()?,
+            distance: parts[3].decode()?,
+            sections,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -581,5 +683,79 @@ mod tests {
             assert_eq!(cor.laps, 2);
             assert_eq!(cor.correction, "+00:00:00.012");
         }
+    }
+
+    #[test]
+    fn test_decodes_line_crossing() {
+        // Fields seen in protocol spec
+        let data = "$L,\"13\",\"P2\",\"POP\",\"01/27/2009\",\"10:10:20.589\",1,\"PC\"";
+        let record = Record::decode(&data);
+
+        assert!(record.is_ok());
+        assert!(matches!(record, Ok(Record::LineCrossing(_))));
+
+        if let Ok(Record::LineCrossing(c)) = record {
+            assert_eq!(c.number, "13");
+            assert_eq!(c.timeline_number, "P2");
+            assert_eq!(c.timeline_name, "POP");
+            assert_eq!(c.date, "01/27/2009");
+            assert_eq!(c.time, "10:10:20.589");
+            assert_eq!(c.driver_id, Some(1));
+            assert_eq!(c.class_name, Some("PC".to_owned()));
+        }
+
+        // Fields seen in sample data
+        let data = "$L,\"15\",\"P1\",\"SFP\",\"01/27/2009\",\"14:13:22.818\"";
+        let record = Record::decode(&data);
+
+        assert!(record.is_ok());
+        assert!(matches!(record, Ok(Record::LineCrossing(_))));
+
+        if let Ok(Record::LineCrossing(c)) = record {
+            assert_eq!(c.number, "15");
+            assert_eq!(c.timeline_number, "P1");
+            assert_eq!(c.timeline_name, "SFP");
+            assert_eq!(c.date, "01/27/2009");
+            assert_eq!(c.time, "14:13:22.818");
+            assert_eq!(c.driver_id, None);
+            assert_eq!(c.class_name, None);
+        }
+    }
+
+    #[test]
+    fn test_decodes_track_description() {
+        let data = concat!(
+            r#"$T,"Circuit of the Americas","COTA","3.40",15,"#,
+            r#""S01","T1","T2",3375,"S02","T2","T3",36559,"S03","T3","T4",40933,"S04","T4","T5",13256,"S05","T5",""#,
+            r#"T6",20923,"S06","T6","T7",1181,"S07","T7","T8",12711,"S08","T8","T9",1181,"S09","T9","TA",29313,"S1"#,
+            r#"0","TA","TB",41744,"S11","TB","T1",16113,"LAP","T1","P1",217379,"PIT","PB","P2",19688,"SP4","T6","T"#,
+            r#"7",1181,"SP5","T8","T9",1181"#
+        );
+
+        let record = Record::decode(&data);
+
+        assert!(record.is_ok());
+        assert!(matches!(record, Ok(Record::TrackDescription(_))));
+
+        if let Ok(Record::TrackDescription(td)) = record {
+            assert_eq!(td.name, "Circuit of the Americas");
+            assert_eq!(td.short_name, "COTA");
+            assert_eq!(td.distance, "3.40");
+            assert_eq!(td.sections.len(), 15);
+        }
+    }
+
+    #[test]
+    fn test_errors_wrong_track_section_count() {
+        let data = concat!(
+            r#"$T,"Circuit of the Americas","COTA","3.40",15,"#,
+            r#""S01","T1","T2",3375,"S02","T2","T3",36559,"S03","T3","T4",40933,"S04","T4","T5",13256,"S05","T5",""#,
+            r#"T6",20923,"S06","T6","T7",1181,"S07","T7","T8",12711,"S08","T8","T9",1181,"S09","T9","TA",29313,"S1"#,
+            r#"0","TA","TB",41744,"S11","TB","T1",16113,"LAP","T1","P1",217379,"PIT","PB","P2",19688"#
+        );
+
+        let record = Record::decode(&data);
+        assert!(record.is_err());
+        assert!(matches!(record, Err(RecordError::IncorrectSectionCount)))
     }
 }
