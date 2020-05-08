@@ -35,9 +35,9 @@ impl Decoder for RMonitorDecoder {
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let line = self.lines_codec.decode(src)?;
         if let Some(line) = line {
-            // If we've somehow started decoding in the middle of a record, discard
-            // this line and continue from the next one.
-            if line.as_bytes()[0] != b'$' {
+            // If we've somehow started decoding in the middle of a record, or this line is
+            // completely empty, discard it and continue from the next one.
+            if line.is_empty() || line.as_bytes()[0] != b'$' {
                 return Ok(None);
             }
             Ok(Some(Record::decode(&line)?))
