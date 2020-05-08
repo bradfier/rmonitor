@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 use thiserror::Error;
-use tokio_codec::{Decoder, LinesCodec, LinesCodecError};
+use tokio_util::codec::{Decoder, LinesCodec, LinesCodecError};
 
 use crate::protocol::*;
 
