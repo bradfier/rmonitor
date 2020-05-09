@@ -4,6 +4,14 @@ version = "0.1.0"
 license = "MIT/Apache-2.0"
 readme = "README.md"
 authors = ["Richard Bradfield <bradfier@fstab.me>"]
+keywords = ["motorsport", "race", "timing", "rmonitor"]
+homepage = "https://github.com/bradfier/rmonitor"
+documentation = "https://doc.rs/rmonitor"
+categories = ["network-programming"]
+description = """
+A simple, Tokio-compatible protocol decoder for RMonitor, a line
+based timing protocol supported by different vendors of sport timing software.
+"""
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
