@@ -70,9 +70,8 @@ mod tests {
     #[test]
     fn test_decodes_single_line() {
         let mut decoder = RMonitorDecoder::new(2048);
-        let mut bytes = BytesMut::from(
-            b"$F,9999,\"00:00:00\",\"14:09:52\",\"00:59:59\",\"      \"\r\n".to_vec(),
-        );
+        let mut bytes =
+            BytesMut::from("$F,9999,\"00:00:00\",\"14:09:52\",\"00:59:59\",\"      \"\r\n");
 
         let result = consume(&mut decoder, &mut bytes);
 
@@ -87,7 +86,7 @@ mod tests {
         let mut decoder = RMonitorDecoder::new(2048);
         let data: Vec<u8> = std::fs::read("sample/2009_Sebring_ALMS_Session_5.txt").unwrap();
 
-        let mut bytes = BytesMut::from(data);
+        let mut bytes = BytesMut::from(data.as_slice());
 
         let result = consume(&mut decoder, &mut bytes);
 

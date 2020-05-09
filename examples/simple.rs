@@ -1,12 +1,10 @@
+use rmonitor::codec::RMonitorDecoder;
 use std::error::Error;
-use rmonitor::codec::{RMonitorDecoder, RMonitorCodecError};
-use rmonitor::protocol::Record;
-use tokio_util::codec::{Decoder, FramedRead};
-use tokio::stream::StreamExt;
-use tokio::net::TcpStream;
-use tokio::time::timeout;
-use tokio::prelude::*;
 use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::stream::StreamExt;
+use tokio::time::timeout;
+use tokio_util::codec::FramedRead;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,4 +18,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
