@@ -60,29 +60,61 @@ impl FromStr for Flag {
     }
 }
 
-trait RMonitorField<T> {
+/// Implemented for types which can be constructed from the comma-separated parts of an RMonitor
+/// line.
+trait FromParts: Sized {
+    fn decode(parts: &[&str]) -> Result<Self, RecordError>;
+}
+
+macro_rules! decode_impl {
+    ($type:ident, $count:expr, $($field:ident),+) => (
+        impl FromParts for $type {
+            fn decode(parts: &[&str]) -> Result<Self, RecordError> {
+                if parts.len() != $count {
+                    return Err(RecordError::MalformedRecord);
+                }
+
+                // A little clunky, but should optimize out
+                let mut idx = 0;
+                $(
+                    idx += 1;
+                    let $field = parts[idx].decode()?;
+                )*
+
+                Ok(Self {
+                    $(
+                        $field,
+                    )*
+                })
+            }
+        }
+    )
+}
+
+/// Implemented for types which can be constructed from a single RMonitor message part.
+trait FieldExt<T> {
     fn decode(self) -> Result<T, RecordError>;
 }
 
-impl RMonitorField<String> for &str {
+impl FieldExt<String> for &str {
     fn decode(self) -> Result<String, RecordError> {
         Ok(self.trim_matches('"').to_owned())
     }
 }
 
-impl RMonitorField<Flag> for &str {
+impl FieldExt<Flag> for &str {
     fn decode(self) -> Result<Flag, RecordError> {
         Ok(self.trim_matches('"').parse()?)
     }
 }
 
-impl RMonitorField<u32> for &str {
+impl FieldExt<u32> for &str {
     fn decode(self) -> Result<u32, RecordError> {
         Ok(self.parse()?)
     }
 }
 
-impl RMonitorField<Option<u32>> for &str {
+impl FieldExt<Option<u32>> for &str {
     fn decode(self) -> Result<Option<u32>, RecordError> {
         if self.is_empty() {
             Ok(None)
@@ -92,13 +124,13 @@ impl RMonitorField<Option<u32>> for &str {
     }
 }
 
-impl RMonitorField<u16> for &str {
+impl FieldExt<u16> for &str {
     fn decode(self) -> Result<u16, RecordError> {
         Ok(self.parse()?)
     }
 }
 
-impl RMonitorField<u8> for &str {
+impl FieldExt<u8> for &str {
     fn decode(self) -> Result<u8, RecordError> {
         Ok(self.parse()?)
     }
@@ -159,21 +191,15 @@ pub struct Heartbeat {
     pub flag_status: Flag,
 }
 
-impl Heartbeat {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 6 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            laps_to_go: parts[1].decode()?,
-            time_to_go: parts[2].decode()?,
-            time_of_day: parts[3].decode()?,
-            race_time: parts[4].decode()?,
-            flag_status: parts[5].decode()?,
-        })
-    }
-}
+decode_impl!(
+    Heartbeat,
+    6,
+    laps_to_go,
+    time_to_go,
+    time_of_day,
+    race_time,
+    flag_status
+);
 
 #[derive(Clone, Debug)]
 pub struct Competitor {
@@ -186,23 +212,17 @@ pub struct Competitor {
     class_number: u8,
 }
 
-impl Competitor {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 8 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            registration_number: parts[1].decode()?,
-            number: parts[2].decode()?,
-            transponder_number: parts[3].decode()?,
-            first_name: parts[4].decode()?,
-            last_name: parts[5].decode()?,
-            nationality: parts[6].decode()?,
-            class_number: parts[7].decode()?,
-        })
-    }
-}
+decode_impl!(
+    Competitor,
+    8,
+    registration_number,
+    number,
+    transponder_number,
+    first_name,
+    last_name,
+    nationality,
+    class_number
+);
 
 #[derive(Clone, Debug)]
 pub struct CompetitorExt {
@@ -215,23 +235,17 @@ pub struct CompetitorExt {
     additional_data: String,
 }
 
-impl CompetitorExt {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 8 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            registration_number: parts[1].decode()?,
-            number: parts[2].decode()?,
-            class_number: parts[3].decode()?,
-            first_name: parts[4].decode()?,
-            last_name: parts[5].decode()?,
-            nationality: parts[6].decode()?,
-            additional_data: parts[7].decode()?,
-        })
-    }
-}
+decode_impl!(
+    CompetitorExt,
+    8,
+    registration_number,
+    number,
+    class_number,
+    first_name,
+    last_name,
+    nationality,
+    additional_data
+);
 
 #[derive(Debug, Clone)]
 pub struct Run {
@@ -239,18 +253,7 @@ pub struct Run {
     description: String,
 }
 
-impl Run {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 3 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            number: parts[1].decode()?,
-            description: parts[2].decode()?,
-        })
-    }
-}
+decode_impl!(Run, 3, number, description);
 
 #[derive(Debug, Clone)]
 pub struct Class {
@@ -258,18 +261,7 @@ pub struct Class {
     description: String,
 }
 
-impl Class {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 3 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            number: parts[1].decode()?,
-            description: parts[2].decode()?,
-        })
-    }
-}
+decode_impl!(Class, 3, number, description);
 
 #[derive(Debug, Clone)]
 pub struct Setting {
@@ -277,18 +269,7 @@ pub struct Setting {
     value: String,
 }
 
-impl Setting {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 3 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            description: parts[1].decode()?,
-            value: parts[2].decode()?,
-        })
-    }
-}
+decode_impl!(Setting, 3, description, value);
 
 // Race _position_ information, this is referred to as a 'Race information' field
 // in the protocol specification
@@ -300,20 +281,7 @@ pub struct Race {
     total_time: String,
 }
 
-impl Race {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 5 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            position: parts[1].decode()?,
-            registration_number: parts[2].decode()?,
-            laps: parts[3].decode()?,
-            total_time: parts[4].decode()?,
-        })
-    }
-}
+decode_impl!(Race, 5, position, registration_number, laps, total_time);
 
 // Practice / Qualifying position information (best lap etc)
 #[derive(Debug, Clone)]
@@ -324,20 +292,14 @@ pub struct PracticeQual {
     best_laptime: String,
 }
 
-impl PracticeQual {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 5 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            position: parts[1].decode()?,
-            registration_number: parts[2].decode()?,
-            best_lap: parts[3].decode()?,
-            best_laptime: parts[4].decode()?,
-        })
-    }
-}
+decode_impl!(
+    PracticeQual,
+    5,
+    position,
+    registration_number,
+    best_lap,
+    best_laptime
+);
 
 #[derive(Debug, Clone)]
 pub struct Init {
@@ -345,18 +307,7 @@ pub struct Init {
     date: String,
 }
 
-impl Init {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 3 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            time: parts[1].decode()?,
-            date: parts[2].decode()?,
-        })
-    }
-}
+decode_impl!(Init, 3, time, date);
 
 #[derive(Debug, Clone)]
 pub struct Passing {
@@ -365,19 +316,7 @@ pub struct Passing {
     total_time: String,
 }
 
-impl Passing {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 4 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            registration_number: parts[1].decode()?,
-            laptime: parts[2].decode()?,
-            total_time: parts[3].decode()?,
-        })
-    }
-}
+decode_impl!(Passing, 4, registration_number, laptime, total_time);
 
 #[derive(Debug, Clone)]
 pub struct Correction {
@@ -388,21 +327,15 @@ pub struct Correction {
     correction: String,
 }
 
-impl Correction {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
-        if parts.len() != 6 {
-            return Err(RecordError::MalformedRecord);
-        }
-
-        Ok(Self {
-            registration_number: parts[1].decode()?,
-            number: parts[2].decode()?,
-            laps: parts[3].decode()?,
-            total_time: parts[4].decode()?,
-            correction: parts[5].decode()?,
-        })
-    }
-}
+decode_impl!(
+    Correction,
+    6,
+    registration_number,
+    number,
+    laps,
+    total_time,
+    correction
+);
 
 #[derive(Debug, Clone)]
 pub struct LineCrossing {
@@ -417,8 +350,9 @@ pub struct LineCrossing {
     class_name: Option<String>,
 }
 
-impl LineCrossing {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
+// Manual implementation to support the variadic fields
+impl FromParts for LineCrossing {
+    fn decode(parts: &[&str]) -> Result<Self, RecordError> {
         if parts.len() < 6 {
             return Err(RecordError::MalformedRecord);
         }
@@ -461,8 +395,8 @@ pub struct TrackSection {
     distance: u32,
 }
 
-impl TrackDescription {
-    pub fn decode(parts: &[&str]) -> Result<Self, RecordError> {
+impl FromParts for TrackDescription {
+    fn decode(parts: &[&str]) -> Result<Self, RecordError> {
         if parts.len() < 5 {
             return Err(RecordError::MalformedRecord);
         }

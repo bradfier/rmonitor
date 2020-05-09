@@ -1,12 +1,11 @@
-use std::net::TcpStream;
-use std::io::Read;
 use bytes::{BufMut, BytesMut};
 use rmonitor::codec::RMonitorDecoder;
+use std::io::Read;
+use std::net::TcpStream;
 use tokio_util::codec::Decoder;
 
 fn main() {
-    let mut stream = TcpStream::connect("127.0.0.1:4000")
-        .expect("Failed to open connection");
+    let mut stream = TcpStream::connect("127.0.0.1:4000").expect("Failed to open connection");
 
     // .read() won't use the BytesMut directly in the appropriate manner,
     // so we do one extra bit of buffering here
@@ -18,7 +17,8 @@ fn main() {
     let mut decoder = RMonitorDecoder::new(2048);
 
     loop {
-        let r = stream.read(&mut read_buf)
+        let r = stream
+            .read(&mut read_buf)
             .expect("Failed to read from stream");
 
         // Put only the read bytes into the decode buffer (not any trailing 0s)
@@ -29,9 +29,11 @@ fn main() {
         let maybe_record = decoder.decode(&mut buffer);
 
         match maybe_record {
-            Ok(None) => { continue; }
+            Ok(None) => {
+                continue;
+            }
             Ok(Some(r)) => println!("{:?}", r),
-            Err(e) => println!("{:?}", e)
+            Err(e) => println!("{:?}", e),
         }
     }
 }
