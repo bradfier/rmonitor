@@ -1,27 +1,57 @@
+//! A tokio-util [`Decoder`] implementation for RMonitor.
+//!
+//! [`Decoder`]: tokio_util::codec::Decoder
 use bytes::BytesMut;
 use thiserror::Error;
 use tokio_util::codec::{Decoder, LinesCodec, LinesCodecError};
 
 use crate::protocol::*;
 
+/// An error was encountered when trying to decode an RMonitor record from
+/// the input byte stream.
 #[derive(Error, Debug)]
 pub enum RMonitorCodecError {
+    /// An error occured when trying to decode a Record from an otherwise valid line
     #[error("unable to decode record from line")]
     RecordDecode(#[from] RecordError),
-    // The underlying lines codec encountered an error
+    /// The underlying LinesCodec encountered an error trying to extract a single line
     #[error(transparent)]
     LinesCodec(#[from] LinesCodecError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug)]
+/// A decoder for RMonitor records, which wraps an underlying [`LinesCodec`]
+/// to provide framing logic.
+///
+/// [`LinesCodec`]: tokio_util::codec::LinesCodec
+#[derive(Default, Debug)]
 pub struct RMonitorDecoder {
     lines_codec: LinesCodec,
 }
 
 impl RMonitorDecoder {
-    pub fn new(max_length: usize) -> Self {
+    /// Returns an `RMonitorDecoder` for decoding RMonitor records from a TCP stream.
+    ///
+    /// # Note
+    ///
+    /// The returned `RMonitorDecoder` will have an underlying `LinesCodec` with no upper
+    /// bound on the length of a buffered line. Consider using [`new_with_max_length`] instead.
+    ///
+    /// [`new_with_max_length`]: crate::codec::RMonitorDecoder::new_with_max_length()
+    pub fn new() -> Self {
+        Self {
+            lines_codec: LinesCodec::new(),
+        }
+    }
+
+    /// Returns an `RMonitorDecoder` where the underlying `LinesCodec` has a maximum line length
+    /// limit.
+    ///
+    /// It is recommended to set such a limit where the input to be supplied to the decoder is
+    /// untrusted, as an attacker could send an unbounded amount of input with no newline
+    /// characters.
+    pub fn new_with_max_length(max_length: usize) -> Self {
         Self {
             lines_codec: LinesCodec::new_with_max_length(max_length),
         }
@@ -69,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_decodes_single_line() {
-        let mut decoder = RMonitorDecoder::new(2048);
+        let mut decoder = RMonitorDecoder::new_with_max_length(2048);
         let mut bytes =
             BytesMut::from("$F,9999,\"00:00:00\",\"14:09:52\",\"00:59:59\",\"      \"\r\n");
 
@@ -83,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_decodes_large_sample() {
-        let mut decoder = RMonitorDecoder::new(2048);
+        let mut decoder = RMonitorDecoder::new_with_max_length(2048);
         let data: Vec<u8> = std::fs::read("sample/2009_Sebring_ALMS_Session_5.txt").unwrap();
 
         let mut bytes = BytesMut::from(data.as_slice());

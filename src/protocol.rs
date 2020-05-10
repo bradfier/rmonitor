@@ -1,3 +1,27 @@
+//! Protocol implementation for decoding RMonitor messages.
+//!
+//! # Example
+//!
+//! ```
+//! use rmonitor::protocol::Record;
+//!
+//! let data = r#"$A,"1234BE","12X",52474,"John","Johnson","USA",5"#;
+//! let record = Record::decode(&data);
+//!
+//! assert!(record.is_ok());
+//! assert!(matches!(record, Ok(Record::Competitor(_))));
+//!
+//! if let Ok(Record::Competitor(competitor)) = record {
+//!     assert_eq!(competitor.registration_number, "1234BE");
+//!     assert_eq!(competitor.number, "12X");
+//!     assert_eq!(competitor.transponder_number, 52474);
+//!     assert_eq!(competitor.first_name, "John");
+//!     assert_eq!(competitor.last_name, "Johnson");
+//!     assert_eq!(competitor.nationality, "USA");
+//!     assert_eq!(competitor.class_number, 5);
+//! }
+//! ```
+
 use std::num::ParseIntError;
 use std::str::FromStr;
 use thiserror::Error;
@@ -21,16 +45,22 @@ pub mod command {
     pub const TRACK_DESCRIPTION: &str = "$T";
 }
 
+/// An error occured when decoding a record
 #[derive(Error, Debug)]
 pub enum RecordError {
+    /// The record prefix was not recognised as a valid record type
     #[error("unknown record type {}", .0)]
     UnknownRecordType(String),
+    /// The input could not be decoded as the record type indicated by the prefix
     #[error("malformed record")]
     MalformedRecord,
+    /// A heartbeat record included an unrecognised flag state
     #[error("unknown flag state '{}'", .0)]
     UnknownFlagState(String),
+    /// A numeric record field could't be parsed as an integer
     #[error("invalid integer field")]
     InvalidIntegerField(#[from] ParseIntError),
+    /// An IMSA track description record had a different number of sections than specified
     #[error("track description had different number of sections than specified")]
     IncorrectSectionCount,
 }
@@ -136,6 +166,7 @@ impl FieldExt<u8> for &str {
     }
 }
 
+/// A unit of data from the RMonitor protocol
 #[derive(Clone, Debug)]
 pub enum Record {
     Heartbeat(Heartbeat),
@@ -154,6 +185,7 @@ pub enum Record {
 }
 
 impl Record {
+    /// Decodes a record from a single line of valid UTF-8 text
     pub fn decode(line: &str) -> Result<Self, RecordError> {
         let splits: Vec<&str> = line.split(',').collect();
 
@@ -182,12 +214,18 @@ impl Record {
     }
 }
 
+/// Heartbeat message, sent every second that a session is active
 #[derive(Clone, Debug)]
 pub struct Heartbeat {
+    /// Number of laps to go
     pub laps_to_go: u32,
+    /// Time until the session ends
     pub time_to_go: String,
+    /// The current time (usually in UTC, but dependent on the timing system in use)
     pub time_of_day: String,
+    /// The time from the first green flag
     pub race_time: String,
+    /// Current flag status
     pub flag_status: Flag,
 }
 
@@ -201,15 +239,20 @@ decode_impl!(
     flag_status
 );
 
+/// Competitor information record
+///
+/// Competitors are unqiuely keyed on their `registration_number` field.
 #[derive(Clone, Debug)]
 pub struct Competitor {
-    registration_number: String,
-    number: String,
-    transponder_number: u32,
-    first_name: String,
-    last_name: String,
-    nationality: String,
-    class_number: u8,
+    pub registration_number: String,
+    pub number: String,
+    pub transponder_number: u32,
+    pub first_name: String,
+    pub last_name: String,
+    /// Often used for Make/Model or Team name by some timing software
+    pub nationality: String,
+    /// Unique class number (matches a `Class` record)
+    pub class_number: u8,
 }
 
 decode_impl!(
@@ -224,15 +267,19 @@ decode_impl!(
     class_number
 );
 
+/// Extended competitor information
+///
+/// It's unclear why the protocol includes this extra (almost identical) competitor information
+/// message, but it is included for completeness.
 #[derive(Clone, Debug)]
 pub struct CompetitorExt {
-    registration_number: String,
-    number: String,
-    class_number: u8,
-    first_name: String,
-    last_name: String,
-    nationality: String,
-    additional_data: String,
+    pub registration_number: String,
+    pub number: String,
+    pub class_number: u8,
+    pub first_name: String,
+    pub last_name: String,
+    pub nationality: String,
+    pub additional_data: String,
 }
 
 decode_impl!(
@@ -247,49 +294,90 @@ decode_impl!(
     additional_data
 );
 
+/// Run (session) information
 #[derive(Debug, Clone)]
 pub struct Run {
-    number: u8,
-    description: String,
+    /// Defined as 'unique', it's likely this means unique within a single RMonitor session
+    pub number: u8,
+    pub description: String,
 }
 
 decode_impl!(Run, 3, number, description);
 
+/// Class information
 #[derive(Debug, Clone)]
 pub struct Class {
-    number: u8,
-    description: String,
+    /// Defined as 'unique', it's likely this means unique within a single RMonitor session
+    pub number: u8,
+    pub description: String,
 }
 
 decode_impl!(Class, 3, number, description);
 
+/// Track setting information
+///
+/// This message type supports arbitrary key-value pairs, however the only specified keys in the
+/// protocol documentation are:
+///
+/// - 'TRACKNAME': The name of the track / event venue
+/// - 'TRACKLENGTH': The length of the track / event venue
 #[derive(Debug, Clone)]
 pub struct Setting {
-    description: String,
-    value: String,
+    pub description: String,
+    /// Specified as a `String` for both defined keys, however `TRACKLENGTH` is normally a string
+    /// representation of a decimal number (e.g. '2.500')
+    pub value: String,
 }
 
 decode_impl!(Setting, 3, description, value);
 
-// Race _position_ information, this is referred to as a 'Race information' field
-// in the protocol specification
+/// Race position information
+///
+/// Contains the current race position of a competitor (identified by `registration_number`) and
+/// their total time / laps completed.
+///
+/// # Note
+///
+/// If an overtake occurs, the timing software should emit a `Race` record for both the passing and
+/// passed competitors, updated with their new positions, so you shouldn't need to recompute the
+/// running order yourself.
+///
+/// Both `Race` and `PracticeQual` messages should be expected in all types of session, in all
+/// scenarios they provide information about the competitor's best lap and total race time, the
+/// interpretation of the standings will depend on the type of session in progress.
 #[derive(Debug, Clone)]
 pub struct Race {
-    position: u16,
-    registration_number: String,
-    laps: Option<u32>,
-    total_time: String,
+    /// The competitor's position in the running order
+    pub position: u16,
+    pub registration_number: String,
+    /// Laps completed, this will be `None` if the competitor has not yet completed a lap after a
+    /// Green flag state has occured.
+    pub laps: Option<u32>,
+    /// Total race time (the sentinel value `00:59:59.999` indicates a competitor for whom no
+    /// passing has yet been recorded).
+    pub total_time: String,
 }
 
 decode_impl!(Race, 5, position, registration_number, laps, total_time);
 
-// Practice / Qualifying position information (best lap etc)
+/// Practice / Qualification position information
+///
+/// Contains the current position of a competitor in the standings for a Practice or Qualifying
+/// session.
+///
+/// # Note
+///
+/// As with a `Race` record, the timing software should issue multiple `PracticeQual` messages when
+/// the standings change.
 #[derive(Debug, Clone)]
 pub struct PracticeQual {
-    position: u16,
-    registration_number: String,
-    best_lap: u32,
-    best_laptime: String,
+    /// The competitor's position in the fastest-lap standings
+    pub position: u16,
+    pub registration_number: String,
+    /// The lap number of the best lap
+    pub best_lap: u32,
+    /// The laptime of the best lap
+    pub best_laptime: String,
 }
 
 decode_impl!(
@@ -301,30 +389,43 @@ decode_impl!(
     best_laptime
 );
 
+/// Indicates that the scoreboard should be reset
+///
+/// The timing software may send an `Init` message immediately prior to the start of a new session,
+/// or when it has determined the data is stale and should be completely refreshed.
 #[derive(Debug, Clone)]
 pub struct Init {
-    time: String,
-    date: String,
+    pub time: String,
+    pub date: String,
 }
 
 decode_impl!(Init, 3, time, date);
 
+/// Passing information
+///
+/// Sent each time a competitor crosses the main timeline.
 #[derive(Debug, Clone)]
 pub struct Passing {
-    registration_number: String,
-    laptime: String,
-    total_time: String,
+    pub registration_number: String,
+    pub laptime: String,
+    pub total_time: String,
 }
 
 decode_impl!(Passing, 4, registration_number, laptime, total_time);
 
+/// Corrected finish time
+///
+/// Sent each time a passing time is corrected (this can be due to a photocell time being
+/// associated with a competitor after the `Passing` message was already sent).
 #[derive(Debug, Clone)]
 pub struct Correction {
-    registration_number: String,
-    number: String,
-    laps: u32,
-    total_time: String,
-    correction: String,
+    pub registration_number: String,
+    pub number: String,
+    pub laps: u32,
+    /// The corrected total time
+    pub total_time: String,
+    /// The total time corrections from the previous passing message
+    pub correction: String,
 }
 
 decode_impl!(
@@ -337,17 +438,21 @@ decode_impl!(
     correction
 );
 
+/// Timeline crossing message
+///
+/// Sent each time a competitor crosses a timeline, this message type is part of the IMSA Enhanced
+/// specification.
 #[derive(Debug, Clone)]
 pub struct LineCrossing {
-    number: String,
-    timeline_number: String,
-    timeline_name: String,
-    date: String,
-    time: String,
+    pub number: String,
+    pub timeline_number: String,
+    pub timeline_name: String,
+    pub date: String,
+    pub time: String,
     // The following fields are referenced in the IMSA protocol document
     // but don't appear in any of the sample data.
-    driver_id: Option<u8>,
-    class_name: Option<String>,
+    pub driver_id: Option<u8>,
+    pub class_name: Option<String>,
 }
 
 // Manual implementation to support the variadic fields
@@ -379,20 +484,35 @@ impl FromParts for LineCrossing {
     }
 }
 
+/// Track and timeline description message
+///
+/// Contains track information as well as a variable number of [`TrackSection`]s, which define the
+/// distance between two timelines.
+///
+/// This message type is part of the IMSA Enhanced specification.
+///
+/// [`TrackSection`]: crate::protocol::TrackSection
 #[derive(Debug, Clone)]
 pub struct TrackDescription {
-    name: String,
-    short_name: String,
-    distance: String,
-    sections: Vec<TrackSection>,
+    pub name: String,
+    pub short_name: String,
+    pub distance: String,
+    pub sections: Vec<TrackSection>,
 }
 
+/// Track section field
+///
+/// Describes a section of track between two timelines.
 #[derive(Debug, Clone)]
 pub struct TrackSection {
-    name: String,
-    start: String,
-    end: String,
-    distance: u32,
+    /// Section name
+    pub name: String,
+    /// Timeline number at section start
+    pub start: String,
+    /// Timeline number at section end
+    pub end: String,
+    /// Sector distance, given in whole inches
+    pub distance: u32,
 }
 
 impl FromParts for TrackDescription {

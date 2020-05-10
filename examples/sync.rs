@@ -14,7 +14,7 @@ fn main() {
     // Create the decode buffer, and a decoder with a maximum line length
     // of 2048.
     let mut buffer = BytesMut::with_capacity(4096);
-    let mut decoder = RMonitorDecoder::new(2048);
+    let mut decoder = RMonitorDecoder::new_with_max_length(2048);
 
     loop {
         let r = stream

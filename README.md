@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Connect to your target RMonitor server
     let stream = TcpStream::connect("127.0.0.1:4000").await?;
 
-    // Constructs a decode with a maximum line length of 2048
+    // Construct a decode with a maximum line length of 2048
     let mut reader = FramedRead::new(stream, RMonitorDecoder::new(2048));
 
     while let Ok(Some(Ok(event))) = reader.next().await {
