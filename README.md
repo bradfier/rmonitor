@@ -17,7 +17,7 @@ The decoder supports both:
 You'll need `rmonitor`, `tokio` and `tokio-util` in your dependencies:
 
 ```toml
-rmonitor = "0.1"
+rmonitor = "0.2"
 tokio-util = { version = "0.3", features = ["codec"] }
 tokio = { version = "0.2", features = ["full"] }
 ```
@@ -25,7 +25,7 @@ tokio = { version = "0.2", features = ["full"] }
 Then create your `main.rs`:
 
 ```rust
-use rmonitor::codec::RMonitorDecoder;
+use rmonitor::RMonitorDecoder;
 use std::error::Error;
 use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let stream = TcpStream::connect("127.0.0.1:4000").await?;
 
     // Construct a decode with a maximum line length of 2048
-    let mut reader = FramedRead::new(stream, RMonitorDecoder::new(2048));
+    let mut reader = FramedRead::new(stream, RMonitorDecoder::new_with_max_length(2048));
 
     while let Ok(Some(Ok(event))) = reader.next().await {
         println!("{:?}", event);
