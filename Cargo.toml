@@ -18,8 +18,5 @@ edition = "2018"
 
 [dependencies]
 thiserror = "1.0"
-tokio-util = { version = "0.3", features = ["codec"] }
-bytes = "0.5"
-
-[dev-dependencies]
-tokio = { version = "0.2", features = ["time", "tcp", "rt-core", "macros", "dns"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util", "time", "macros"] }
+tokio-util = { version = "0.7", features = ["codec"] }

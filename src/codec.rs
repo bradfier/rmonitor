@@ -1,8 +1,8 @@
 //! A tokio-util [`Decoder`] implementation for RMonitor.
 //!
 //! [`Decoder`]: tokio_util::codec::Decoder
-use bytes::BytesMut;
 use thiserror::Error;
+use tokio_util::bytes::BytesMut;
 use tokio_util::codec::{Decoder, LinesCodec, LinesCodecError};
 
 use crate::protocol::*;
