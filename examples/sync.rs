@@ -1,4 +1,4 @@
-use bytes::{BufMut, BytesMut};
+use tokio_util::bytes::{BufMut, BytesMut};
 use rmonitor::codec::RMonitorDecoder;
 use std::io::Read;
 use std::net::TcpStream;

@@ -10,7 +10,7 @@
 //! use rmonitor::RMonitorDecoder;
 //! # use std::error::Error;
 //! use tokio::net::TcpStream;
-//! # use tokio::stream::StreamExt;
+//! use futures::stream::StreamExt;
 //! use tokio_util::codec::FramedRead;
 //!
 //! #[tokio::main]
