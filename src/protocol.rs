@@ -134,7 +134,7 @@ impl FieldExt<String> for &str {
 
 impl FieldExt<Flag> for &str {
     fn decode(self) -> Result<Flag, RecordError> {
-        Ok(self.trim_matches('"').parse()?)
+        self.trim_matches('"').parse()
     }
 }
 

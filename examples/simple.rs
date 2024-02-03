@@ -6,7 +6,7 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::codec::FramedRead;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
     let stream = TcpStream::connect("127.0.0.1:50000").await?;
 
