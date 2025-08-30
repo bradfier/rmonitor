@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::AsyncWriteExt;
+use tokio::net::{TcpListener, TcpStream};
 
 /// Simulates an RMonitor server using a text file from the samples directory as a data source
 #[tokio::main(flavor = "current_thread")]

@@ -1,7 +1,7 @@
+use futures::StreamExt;
 use rmonitor::codec::RMonitorDecoder;
 use std::error::Error;
 use std::time::Duration;
-use futures::StreamExt;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::codec::FramedRead;

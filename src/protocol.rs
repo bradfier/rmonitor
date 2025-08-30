@@ -567,7 +567,10 @@ mod tests {
         let record = Record::decode(&data);
 
         assert!(record.is_ok());
-        assert!(matches!(record, Ok(Record::Heartbeat(Heartbeat { laps_to_go: 14, .. }))));
+        assert!(matches!(
+            record,
+            Ok(Record::Heartbeat(Heartbeat { laps_to_go: 14, .. }))
+        ));
     }
 
     #[test]

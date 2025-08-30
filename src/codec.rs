@@ -12,8 +12,12 @@ use crate::protocol::*;
 #[derive(Error, Debug)]
 pub enum RMonitorCodecError {
     /// An error occured when trying to decode a Record from an otherwise valid line
-    #[error("unable to decode record from line")]
-    RecordDecode(#[from] RecordError),
+    #[error("unable to decode record from line '{line}': {source}")]
+    RecordDecode {
+        line: String,
+        #[source]
+        source: RecordError,
+    },
     /// The underlying LinesCodec encountered an error trying to extract a single line
     #[error(transparent)]
     LinesCodec(#[from] LinesCodecError),
@@ -70,7 +74,12 @@ impl Decoder for RMonitorDecoder {
             if line.is_empty() || line.as_bytes()[0] != b'$' {
                 return Ok(None);
             }
-            Ok(Some(Record::decode(&line)?))
+            Ok(Some(Record::decode(&line).map_err(|source| {
+                RMonitorCodecError::RecordDecode {
+                    line: line.clone(),
+                    source,
+                }
+            })?))
         } else {
             Ok(None)
         }
@@ -124,5 +133,22 @@ mod tests {
         assert_eq!(0, bytes.len());
         // And no errors were encountered when processing the file
         assert!(result.into_iter().all(|r| r.is_ok()));
+    }
+
+    #[test]
+    fn test_error_includes_line_content() {
+        let mut decoder = RMonitorDecoder::new_with_max_length(2048);
+        // Create a malformed line that should trigger a decode error
+        let mut bytes = BytesMut::from("$F,invalid,data,here\r\n");
+
+        let result = decoder.decode(&mut bytes);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+
+        // Check that the error message includes both the line content and the underlying error
+        let error_msg = format!("{}", error);
+        assert!(error_msg.contains("$F,invalid,data,here"));
+        assert!(error_msg.contains("unable to decode record from line"));
     }
 }
