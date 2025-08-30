@@ -65,7 +65,7 @@ pub enum RecordError {
     IncorrectSectionCount,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Flag {
     None,
     Green,
