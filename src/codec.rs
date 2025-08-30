@@ -74,12 +74,21 @@ impl Decoder for RMonitorDecoder {
             if line.is_empty() || line.as_bytes()[0] != b'$' {
                 return Ok(None);
             }
-            Ok(Some(Record::decode(&line).map_err(|source| {
-                RMonitorCodecError::RecordDecode {
-                    line: line.clone(),
-                    source,
+
+            // Try to decode the record, but if it fails, log the error and skip this line
+            match Record::decode(&line) {
+                Ok(record) => Ok(Some(record)),
+                Err(source) => {
+                    // Log the error with full details but continue processing
+                    log::warn!(
+                        "Skipping invalid RMonitor record from line '{}': {}",
+                        line,
+                        source
+                    );
+                    // Return Ok(None) to continue processing the next line
+                    Ok(None)
                 }
-            })?))
+            }
         } else {
             Ok(None)
         }
@@ -95,12 +104,25 @@ mod tests {
         bytes: &mut BytesMut,
     ) -> Vec<Result<Option<Record>, RMonitorCodecError>> {
         let mut result = vec![];
+        let mut consecutive_none = 0;
         loop {
             match decoder.decode(bytes) {
                 Ok(None) => {
+                    consecutive_none += 1;
+                    // If we get two consecutive None results, assume we're done
+                    // (one for skipped record, one for no more complete lines)
+                    if consecutive_none > 1 || bytes.is_empty() {
+                        break;
+                    }
+                }
+                Ok(Some(record)) => {
+                    consecutive_none = 0;
+                    result.push(Ok(Some(record)));
+                }
+                Err(e) => {
+                    result.push(Err(e));
                     break;
                 }
-                out => result.push(out),
             }
         }
         result
@@ -136,19 +158,34 @@ mod tests {
     }
 
     #[test]
-    fn test_error_includes_line_content() {
+    fn test_skips_invalid_records() {
+        // Initialize logging for tests
+        let _ = env_logger::builder().is_test(true).try_init();
+
         let mut decoder = RMonitorDecoder::new_with_max_length(2048);
-        // Create a malformed line that should trigger a decode error
-        let mut bytes = BytesMut::from("$F,invalid,data,here\r\n");
+        // Create a mix of valid and invalid records
+        let mut bytes = BytesMut::from(
+            "$F,invalid,data,here\r\n$F,9999,\"00:00:00\",\"14:09:52\",\"00:59:59\",\"      \"\r\n$UNKNOWN,some,bad,record\r\n$B,5,\"Friday free practice\"\r\n"
+        );
 
-        let result = decoder.decode(&mut bytes);
+        let result = consume(&mut decoder, &mut bytes);
 
-        assert!(result.is_err());
-        let error = result.unwrap_err();
+        // Debug: Print how many bytes remain
+        println!("Remaining bytes: {}", bytes.len());
+        println!("Results: {:?}", result);
 
-        // Check that the error message includes both the line content and the underlying error
-        let error_msg = format!("{}", error);
-        assert!(error_msg.contains("$F,invalid,data,here"));
-        assert!(error_msg.contains("unable to decode record from line"));
+        // All bytes should be consumed
+        assert_eq!(0, bytes.len());
+
+        // We should get 2 valid records (the valid heartbeat and run record)
+        // The invalid records should be skipped (returning Ok(None))
+        let valid_records: Vec<_> = result
+            .into_iter()
+            .filter_map(|r| r.ok().flatten())
+            .collect();
+
+        assert_eq!(2, valid_records.len());
+        assert!(matches!(valid_records[0], Record::Heartbeat(_)));
+        assert!(matches!(valid_records[1], Record::Run(_)));
     }
 }
